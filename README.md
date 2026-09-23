@@ -1,4 +1,4 @@
-# SyncStudio 3.2 — full terminal and development workspace
+# SyncStudio 2 — full terminal and development workspace
 
 SyncStudio now includes a visible **Terminal / Output / Languages** panel in the regular Monaco editor, real local shell sessions, and Run/Stop controls. Python, C, C++, Java, Go and Rust project templates join the existing web templates.
 
