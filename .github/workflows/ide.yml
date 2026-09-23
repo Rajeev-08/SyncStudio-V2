@@ -1,0 +1,31 @@
+name: Full IDE runtime acceptance
+on:
+  workflow_dispatch:
+jobs:
+  docker-ide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run ide:setup
+      - run: npm run ide:build
+      - run: npm run ide:start
+      - name: Wait for API
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:3001/api/health; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - run: npm run test:ide
+      - name: Runtime logs
+        if: failure()
+        run: docker compose -f compose.ide.yaml logs --no-color
+      - name: Stop runtime
+        if: always()
+        run: npm run ide:stop

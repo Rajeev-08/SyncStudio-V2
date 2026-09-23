@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.data/
+test-results/
+playwright-report/
+.sites-runtime/
+legacy/
+
+apps/web/public/preview-runtime.js
+apps/web/public/babel.min.js

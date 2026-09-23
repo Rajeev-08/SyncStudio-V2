@@ -1,0 +1,10 @@
+node_modules
+.git
+.env
+.data
+legacy
+dist
+playwright-report
+test-results
+.openai
+.sites-runtime

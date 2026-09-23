@@ -1,0 +1,54 @@
+# Complete local development stack. Run scripts/setup-ide.mjs first.
+services:
+  app:
+    build: .
+    ports: ["127.0.0.1:3001:3001"]
+    environment:
+      NODE_ENV: development
+      CLIENT_URL: http://localhost:3001
+      DATA_DRIVER: sqlite
+      SQLITE_PATH: /app/.data/syncstudio.db
+      RUNNER_URL: http://runner:7000
+      RUNNER_SECRET: ${RUNNER_SECRET:?Run node scripts/setup-ide.mjs first}
+      ENABLE_DEMO: "false"
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_MODEL: ${AI_MODEL:-gpt-4.1-mini}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes: ["app-data:/app/.data"]
+    networks: [control]
+    restart: unless-stopped
+  runner:
+    build:
+      context: .
+      dockerfile: infrastructure/runner.Dockerfile
+    container_name: syncstudio-runner
+    ports: ["127.0.0.1:3002:3002"]
+    environment:
+      RUNNER_SECRET: ${RUNNER_SECRET:?Run node scripts/setup-ide.mjs first}
+      IDE_PUBLIC_URL: http://localhost:3002
+      APP_INTERNAL_URL: http://app:3001
+      RUNNER_CONTAINER: syncstudio-runner
+      MAX_RUNNING_WORKSPACES: 6
+      WORKSPACE_IDLE_MINUTES: 30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner-data:/data
+    networks: [control]
+    restart: unless-stopped
+  workspace-image:
+    image: syncstudio-workspace:3
+    build:
+      context: .
+      dockerfile: infrastructure/workspace/Dockerfile
+    profiles: [images]
+    entrypoint: ["/bin/true"]
+networks:
+  control:
+volumes:
+  app-data:
+  runner-data:
