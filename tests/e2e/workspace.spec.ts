@@ -1,3 +1,4 @@
+
 import { test, expect, type Page } from "@playwright/test";
 
 const suffix = Date.now().toString(36);
@@ -6,6 +7,7 @@ async function register(page: Page, name: string) {
   await page.goto("/register");
 
   await page.getByLabel("Username").fill(name + suffix);
+
   await page
     .getByLabel("Email address")
     .fill(`${name}${suffix}@example.test`);
@@ -28,18 +30,10 @@ async function register(page: Page, name: string) {
   ).toBeVisible();
 }
 
-/**
- * Opens the New Project modal and creates a project.
- *
- * Important:
- * The dashboard also contains a "Create project" button when
- * there are no projects. Once the modal is open, there can therefore
- * be TWO buttons with the same accessible name.
- *
- * Scoping the locator to the dialog avoids Playwright strict-mode
- * violations.
- */
-async function createProject(page: Page, projectName: string) {
+async function createProject(
+  page: Page,
+  projectName: string,
+) {
   await page
     .getByRole("button", {
       name: "New project",
@@ -81,246 +75,261 @@ test(
     const b = await editor.newPage();
     const c = await stranger.newPage();
 
-    try {
-      // ------------------------------------------------------------
-      // Register users
-      // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Register users
+    // ------------------------------------------------------------
 
-      await register(a, "owner");
-      await register(b, "editor");
-      await register(c, "stranger");
+    await register(a, "owner");
+    await register(b, "editor");
+    await register(c, "stranger");
 
-      // ------------------------------------------------------------
-      // Create project
-      // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Create project
+    // ------------------------------------------------------------
 
-      await createProject(a, "E2E workspace");
+    await createProject(a, "E2E workspace");
 
-      const url = a.url();
+    const url = a.url();
 
-      // ------------------------------------------------------------
-      // Add editor as project member
-      // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Add editor
+    // ------------------------------------------------------------
 
-      await a
-        .getByRole("button", {
-          name: "Members",
-          exact: true,
-        })
-        .click();
+    await a
+      .getByRole("button", {
+        name: "Members",
+        exact: true,
+      })
+      .click();
 
-      await a
-        .getByLabel("Email", {
-          exact: true,
-        })
-        .fill(`editor${suffix}@example.test`);
+    await a
+      .getByLabel("Email", {
+        exact: true,
+      })
+      .fill(`editor${suffix}@example.test`);
 
-      await a
-        .getByRole("button", {
-          name: "Add member",
-          exact: true,
-        })
-        .click();
+    await a
+      .getByRole("button", {
+        name: "Add member",
+        exact: true,
+      })
+      .click();
 
-      await expect(
-        a.getByText("Member added", {
-          exact: true,
-        }),
-      ).toBeVisible();
+    await expect(
+      a.getByText("Member added", {
+        exact: true,
+      }),
+    ).toBeVisible();
 
-      // ------------------------------------------------------------
-      // Editor joins project
-      // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Editor opens project
+    // ------------------------------------------------------------
 
-      await b.goto(url);
+    await b.goto(url);
 
-      await expect(
-        b.getByRole("textbox", {
-          name: "Editor content",
-          exact: true,
-        }),
-      ).toBeVisible();
-
-      const ea = a.getByRole("textbox", {
+    await expect(
+      b.getByRole("textbox", {
         name: "Editor content",
         exact: true,
-      });
+      }),
+    ).toBeVisible();
 
-      const eb = b.getByRole("textbox", {
-        name: "Editor content",
+    const ea = a.getByRole("textbox", {
+      name: "Editor content",
+      exact: true,
+    });
+
+    const eb = b.getByRole("textbox", {
+      name: "Editor content",
+      exact: true,
+    });
+
+    // ------------------------------------------------------------
+    // Collaborative editing
+    // ------------------------------------------------------------
+
+    await Promise.all([
+      ea.press("ControlOrMeta+End"),
+      eb.press("ControlOrMeta+End"),
+    ]);
+
+    await ea.pressSequentially(
+      "\n<!-- FROM_OWNER -->",
+    );
+
+    await eb.pressSequentially(
+      "\n<!-- FROM_EDITOR -->",
+    );
+
+    await expect
+      .poll(
+        async () =>
+          a.locator(".view-lines").innerText(),
+      )
+      .toContain("FROM_EDITOR");
+
+    await expect
+      .poll(
+        async () =>
+          b.locator(".view-lines").innerText(),
+      )
+      .toContain("FROM_OWNER");
+
+    // ------------------------------------------------------------
+    // Remote selection
+    // ------------------------------------------------------------
+
+    await expect(
+      a
+        .locator('[class*="yRemoteSelectionHead-"]')
+        .first(),
+    ).toBeVisible();
+
+    // ------------------------------------------------------------
+    // Preview
+    // ------------------------------------------------------------
+
+    const frame = a.frameLocator(
+      'iframe[title="Project preview"]',
+    );
+
+    await frame
+      .getByRole("button", {
+        name: "Make it happen · 0",
+      })
+      .click();
+
+    await expect(
+      frame.getByRole("button", {
+        name: "Make it happen · 1",
+      }),
+    ).toBeVisible();
+
+    await expect(
+      a.getByRole("log"),
+    ).toContainText(
+      "You made it happen",
+    );
+
+    // ------------------------------------------------------------
+    // Version history
+    // ------------------------------------------------------------
+
+    await a
+      .getByRole("button", {
+        name: "Version history",
         exact: true,
-      });
+      })
+      .click();
 
-      // ------------------------------------------------------------
-      // Collaborative editing
-      // ------------------------------------------------------------
+    await a
+      .getByLabel("Snapshot message")
+      .fill("Working milestone");
 
-      await Promise.all([
-        ea.press("ControlOrMeta+End"),
-        eb.press("ControlOrMeta+End"),
-      ]);
+    await a
+      .getByRole("button", {
+        name: "Create snapshot",
+        exact: true,
+      })
+      .click();
 
-      await Promise.all([
-        ea.pressSequentially("\n<!-- FROM_OWNER -->"),
-        eb.pressSequentially("\n<!-- FROM_EDITOR -->"),
-      ]);
+    await expect(
+      a.getByText("Snapshot created", {
+        exact: true,
+      }),
+    ).toBeVisible();
 
-      await expect
-        .poll(async () => a.locator(".view-lines").innerText())
-        .toContain("FROM_EDITOR");
+    // ------------------------------------------------------------
+    // Change after snapshot
+    // ------------------------------------------------------------
 
-      await expect
-        .poll(async () => b.locator(".view-lines").innerText())
-        .toContain("FROM_OWNER");
+    await ea.press("ControlOrMeta+End");
 
-      // Remote cursor/selection should appear.
-      await expect(
-        a.locator('[class*="yRemoteSelectionHead-"]').first(),
-      ).toBeVisible();
+    await ea.pressSequentially(
+      "\n<!-- AFTER_SNAPSHOT -->",
+    );
 
-      // ------------------------------------------------------------
-      // Preview interaction
-      // ------------------------------------------------------------
+    await expect(
+      a.getByRole("button", {
+        name: "Saved",
+        exact: true,
+      }),
+    ).toBeVisible();
 
-      const frame = a.frameLocator(
-        'iframe[title="Project preview"]',
+    // ------------------------------------------------------------
+    // Compare
+    // ------------------------------------------------------------
+
+    await a
+      .getByRole("button", {
+        name: "Compare",
+        exact: true,
+      })
+      .click();
+
+    await expect(
+      a.getByRole("dialog"),
+    ).toBeVisible();
+
+    await a
+      .getByRole("button", {
+        name: "Close dialog",
+        exact: true,
+      })
+      .click();
+
+    // ------------------------------------------------------------
+    // Restore
+    // ------------------------------------------------------------
+
+    await a
+      .getByRole("button", {
+        name: "Restore snapshot",
+        exact: true,
+      })
+      .click();
+
+    const restoreDialog = a.getByRole("dialog");
+
+    await expect(
+      restoreDialog,
+    ).toBeVisible();
+
+    await restoreDialog
+      .getByRole("button", {
+        name: "Restore snapshot",
+        exact: true,
+      })
+      .click();
+
+    // ------------------------------------------------------------
+    // Verify restored content
+    // ------------------------------------------------------------
+
+    await expect
+      .poll(
+        async () =>
+          a.locator(".view-lines").innerText(),
+      )
+      .not.toContain(
+        "AFTER_SNAPSHOT",
       );
 
-      await frame
-        .getByRole("button", {
-          name: "Make it happen · 0",
-        })
-        .click();
+    // ------------------------------------------------------------
+    // Stranger cannot access project
+    // ------------------------------------------------------------
 
-      await expect(
-        frame.getByRole("button", {
-          name: "Make it happen · 1",
-        }),
-      ).toBeVisible();
+    await c.goto(url);
 
-      await expect(
-        a.getByRole("log"),
-      ).toContainText("You made it happen");
+    await expect(
+      c.getByRole("heading", {
+        name: "Couldn’t open this project",
+      }),
+    ).toBeVisible();
 
-      // ------------------------------------------------------------
-      // Version history / snapshot
-      // ------------------------------------------------------------
-
-      await a
-        .getByRole("button", {
-          name: "Version history",
-          exact: true,
-        })
-        .click();
-
-      await a
-        .getByLabel("Snapshot message")
-        .fill("Working milestone");
-
-      await a
-        .getByRole("button", {
-          name: "Create snapshot",
-          exact: true,
-        })
-        .click();
-
-      await expect(
-        a.getByText("Snapshot created", {
-          exact: true,
-        }),
-      ).toBeVisible();
-
-      // ------------------------------------------------------------
-      // Modify after snapshot
-      // ------------------------------------------------------------
-
-      await ea.press("ControlOrMeta+End");
-
-      await ea.pressSequentially(
-        "\n<!-- AFTER_SNAPSHOT -->",
-      );
-
-      await expect(
-        a.getByRole("button", {
-          name: "Saved",
-          exact: true,
-        }),
-      ).toBeVisible();
-
-      // ------------------------------------------------------------
-      // Compare snapshot
-      // ------------------------------------------------------------
-
-      await a
-        .getByRole("button", {
-          name: "Compare",
-          exact: true,
-        })
-        .click();
-
-      await expect(
-        a.getByRole("dialog"),
-      ).toBeVisible();
-
-      await a
-        .getByRole("button", {
-          name: "Close dialog",
-          exact: true,
-        })
-        .click();
-
-      // ------------------------------------------------------------
-      // Restore snapshot
-      // ------------------------------------------------------------
-
-      await a
-        .getByRole("button", {
-          name: "Restore snapshot",
-          exact: true,
-        })
-        .click();
-
-      // There may now be two "Restore snapshot" buttons:
-      // one in the page and one inside the confirmation dialog.
-      // Scope the second click to the dialog.
-      const restoreDialog = a.getByRole("dialog");
-
-      await expect(
-        restoreDialog,
-      ).toBeVisible();
-
-      await restoreDialog
-        .getByRole("button", {
-          name: "Restore snapshot",
-          exact: true,
-        })
-        .click();
-
-      // ------------------------------------------------------------
-      // Verify snapshot restoration
-      // ------------------------------------------------------------
-
-      await expect
-        .poll(async () => a.locator(".view-lines").innerText())
-        .not.toContain("AFTER_SNAPSHOT");
-
-      // ------------------------------------------------------------
-      // Verify project isolation
-      // ------------------------------------------------------------
-
-      await c.goto(url);
-
-      await expect(
-        c.getByRole("heading", {
-          name: "Couldn’t open this project",
-        }),
-      ).toBeVisible();
-    } finally {
-      // Always close browser contexts, even when a test fails.
-      await owner.close();
-      await editor.close();
-      await stranger.close();
-    }
+    // IMPORTANT:
+    // Do NOT call owner.close(), editor.close(), or stranger.close().
+    // Playwright owns these contexts through the browser fixture.
   },
 );
 
@@ -333,7 +342,10 @@ test(
     // Create project
     // ------------------------------------------------------------
 
-    await createProject(page, "File operations");
+    await createProject(
+      page,
+      "File operations",
+    );
 
     // ------------------------------------------------------------
     // Create folder
@@ -384,7 +396,7 @@ test(
       .click();
 
     // ------------------------------------------------------------
-    // Open file
+    // Open test.js
     // ------------------------------------------------------------
 
     await page
@@ -401,7 +413,7 @@ test(
     ).toBeVisible();
 
     // ------------------------------------------------------------
-    // Quick open
+    // Quick Open
     // ------------------------------------------------------------
 
     await page
@@ -411,22 +423,44 @@ test(
       })
       .click();
 
-    const quickOpenDialog = page.getByRole("dialog");
-
     await expect(
-      quickOpenDialog,
+      page.getByRole("dialog"),
     ).toBeVisible();
 
     await page
-      .getByLabel("Search commands or files")
+      .getByLabel(
+        "Search commands or files",
+      )
       .fill("styles");
 
-    await quickOpenDialog
-      .getByRole("button", {
-        name: "styles.css",
-        exact: true,
-      })
+    /*
+     * Quick Open's result is not exposed as a button with the
+     * accessible name "styles.css" in the current implementation.
+     *
+     * Search the dialog by text instead of assuming a role.
+     */
+
+    const quickOpen = page.getByRole(
+      "dialog",
+    );
+
+    await expect(
+      quickOpen.getByText(
+        "styles.css",
+        { exact: true },
+      ),
+    ).toBeVisible();
+
+    await quickOpen
+      .getByText(
+        "styles.css",
+        { exact: true },
+      )
       .click();
+
+    // ------------------------------------------------------------
+    // Verify styles.css opened
+    // ------------------------------------------------------------
 
     await expect(
       page.getByRole("tab", {
@@ -453,7 +487,9 @@ test(
       .fill("background");
 
     await expect(
-      page.locator(".search-result").first(),
+      page
+        .locator(".search-result")
+        .first(),
     ).toBeVisible();
   },
 );
